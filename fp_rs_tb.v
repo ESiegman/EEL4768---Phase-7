@@ -193,8 +193,11 @@ module fp_rs_tb;
         enqueue(6,FADD,0,0,0,1); enqueue(7,FADD,0,0,0,1);
         enqueue(0,FADD,0,0,0,1); enqueue(1,FADD,0,0,0,1);
         check(!accept && !dispatch,"four waiting FP entries exert backpressure");
-        cdb=1; ctag=5; cv=32'h3f800000; tick; cdb=0;
+        // All four wake in the CDB cycle itself (same-cycle CDB bypass) and
+        // the oldest by modular ROB age dispatches in that cycle.
+        cdb=1; ctag=5; cv=32'h3f800000; #1;
         check(dispatch && dtag==6,"oldest ready uses modular ROB age");
+        tick; cdb=0;
         reset; check(!serializing && valid==0 && !dispatch,"reset clears FP queue, lanes and CSR lock");
         enqueue(6,FDIV,32'h3f800000,32'h40400000,0,0); tick;
         reset; repeat(32) tick;

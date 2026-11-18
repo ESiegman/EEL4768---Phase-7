@@ -16,7 +16,8 @@ The conventions follow what Bowen already merged in `rs.v` and
 - an operand is `{wait, qtag, value}`: `wait = 1` means "not ready, watch the
   CDB for `qtag`", `wait = 0` means `value` is the operand;
 - a result is a held request (`o_result_valid` + payload) that stays up,
-  unchanged, until the arbiter's `i_result_grant`;
+  unchanged, until the arbiter's `i_result_grant` (a load may first request
+  in the cycle the cache answers it, see "Load completion");
 - the unit snoops the CDB on the allocate cycle too, so a producer that
   broadcasts in the same cycle its consumer issues is never lost.
 
@@ -27,7 +28,7 @@ The conventions follow what Bowen already merged in `rs.v` and
 | Allocate (issue) | `i_alloc_valid`, `i_alloc_tag`, `i_alloc_store`, `i_alloc_funct3`, `i_alloc_imm`, base `{wait,qtag,value}`, store data `{wait,qtag,value}` | One per cycle, in program order. Only when `!o_full`. |
 | Full | `o_full` | Registered state only: does not look at this cycle's allocate or free. |
 | CDB snoop | `i_cdb_valid`, `i_cdb_tag`, `i_cdb_value` | Every waiting entry compares every cycle, and so does the entry being allocated. |
-| Load result to `cdb_arb` | `o_result_valid`, `o_result_tag`, `o_result_value`, `i_result_grant` | Held until granted. fflags for a load are `5'd0`. |
+| Load result to `cdb_arb` | `o_result_valid`, `o_result_tag`, `o_result_value`, `i_result_grant` | Held until granted, from the cache-ready cycle on. fflags for a load are `5'd0`. |
 | ROB head / commit | `i_rob_head`, `i_commit_valid`, `o_head_valid`, `o_head_ready`, `o_head_trap` | Replaces a "done without CDB" pulse; see below. |
 | Retire fields for a memory op at the head | `o_head_base`, `o_head_data`, `o_head_dmem_{addr,mask,ren,wen,rdata,wdata}` | Same values the phase 6 hart reported. |
 | Main memory | `o_mem_*`, `i_mem_valid`, `i_mem_rd_data` | The data cache is instantiated **inside** `lsu.v`; the hart passes these straight to its ports. |
@@ -128,13 +129,18 @@ does). Issue may also resolve it as a CDB bypass (PDF 4.8) and send
 - A load reads the cache when it is the oldest entry that still needs the
   cache. In the cycle the cache raises `o_ready`, the LSU latches `o_rdata`
   (the cache does not hold it).
-- From the next cycle, `o_result_valid` is high for the **oldest load whose
-  data is latched and not yet broadcast**, with its tag and extended value.
-  It stays high, with the same tag and value, until `i_result_grant`. The
-  grant cycle is the broadcast cycle:
+- `o_result_valid` is high for the **oldest load whose data is latched and
+  not yet broadcast**, with its tag and extended value. If there is none, it
+  is high for the load the cache answers **this cycle**, with the value taken
+  straight from `o_rdata` (PDF 4.10.2: "Load -> o_complete: on cache ready +
+  CDB grant"). If that load loses the arbitration, its word is latched as
+  usual and it keeps requesting, unchanged, from the next cycle until
+  `i_result_grant`. The grant cycle is the broadcast cycle:
   `cdb = {valid: 1, tag: o_result_tag, value: o_result_value, fflags: 5'd0}`.
-- `o_result_valid` and the payload come only from registers, so the grant can
-  be combinational from it without a loop.
+- `o_result_valid` and the payload depend on LSU registers and the cache's
+  `o_ready`/`o_rdata`, which depend only on LSU registers and `i_rob_head`,
+  never on a grant, so the grant can be combinational from it without a
+  loop.
 - The next load does not wait for the previous load's grant: once a load's
   data is latched, the next op may use the cache while the first one waits
   for the CDB.
@@ -226,10 +232,10 @@ issue      lw alloc
 LSU                   cache req, hit:
                       o_ready, latch
                       o_rdata
-cdb_arb                                  o_result_valid,
-                                         grant -> CDB,
-                                         o_complete
-ROB                                                      head ready, commit
+cdb_arb               o_result_valid,
+                      grant -> CDB,
+                      o_complete
+ROB                                      head ready, commit
 
 issue      sw alloc
 LSU                   data/base ready
@@ -307,4 +313,4 @@ ROB only, PDF 4.4).
    retires carry consecutive tags.
 4. **Bradly:** the LSU is one requester with `{valid, tag}` for age and
    `{value, fflags = 0}` as payload; `o_result_valid` is held until granted
-   and comes only from registers.
+   and depends only on LSU registers and the cache's same-cycle answer.

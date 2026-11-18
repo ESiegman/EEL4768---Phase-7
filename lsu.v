@@ -140,6 +140,7 @@ module lsu #(
     wire        write_fire;
     wire [31:0] c_rdata;
     wire        grant_fire = o_result_valid & i_result_grant;
+    wire [ 2:0] res_i;          // entry of this cycle's CDB request (below)
     wire        free = i_commit_valid & o_head_valid;
 
     // The allocate-cycle CDB snoop (same rule as reservation_station.v).
@@ -246,7 +247,7 @@ module lsu #(
                         got <= 1'b1;
                         raw <= c_rdata;
                     end
-                    if (grant_fire && (rp_i == ID))
+                    if (grant_fire && (res_i == ID))
                         sent <= 1'b1;
                     if (write_fire && (hd_i == ID))
                         wrote <= 1'b1;
@@ -365,15 +366,25 @@ module lsu #(
     // ------------------------------------------------------------------
     // CDB request: the oldest load with its word latched and not yet sent
     // ------------------------------------------------------------------
-    wire [31:0] rp_sh = (rp_off == 2'd0) ? rp_raw :
-                        (rp_off == 2'd1) ? {8'b0, rp_raw[31:8]} :
-                        (rp_off == 2'd2) ? {16'b0, rp_raw[31:16]} :
-                                           {24'b0, rp_raw[31:24]};
-    assign o_result_valid = pick_v[8];
-    assign o_result_tag   = e_tag[rp_i];
-    assign o_result_value = (rp_f3[1:0] == 2'b00) ? {{24{~rp_f3[2] & rp_sh[7]}}, rp_sh[7:0]} :
-                            (rp_f3[1:0] == 2'b01) ? {{16{~rp_f3[2] & rp_sh[15]}}, rp_sh[15:0]} :
-                                                    rp_raw;
+    // With no latched load waiting, a load reading the cache this cycle
+    // requests the CDB straight from the cache (cache ready + grant in the
+    // same cycle). If it loses, its word is latched as usual and it asks
+    // again from the next cycle. Loads read the cache in order, so a
+    // latched load is always older than the one reading now.
+    wire        direct = load_fire & ~pick_v[8];
+    assign      res_i  = pick_v[8] ? rp_i : cp_i;
+    wire [ 2:0] q_f3   = pick_v[8] ? rp_f3  : cp_f3;
+    wire [ 1:0] q_off  = pick_v[8] ? rp_off : cp_off;
+    wire [31:0] q_raw  = pick_v[8] ? rp_raw : c_rdata;
+    wire [31:0] q_sh   = (q_off == 2'd0) ? q_raw :
+                         (q_off == 2'd1) ? {8'b0, q_raw[31:8]} :
+                         (q_off == 2'd2) ? {16'b0, q_raw[31:16]} :
+                                           {24'b0, q_raw[31:24]};
+    assign o_result_valid = pick_v[8] | direct;
+    assign o_result_tag   = e_tag[res_i];
+    assign o_result_value = (q_f3[1:0] == 2'b00) ? {{24{~q_f3[2] & q_sh[7]}}, q_sh[7:0]} :
+                            (q_f3[1:0] == 2'b01) ? {{16{~q_f3[2] & q_sh[15]}}, q_sh[15:0]} :
+                                                   q_raw;
 
     // ------------------------------------------------------------------
     // ROB head

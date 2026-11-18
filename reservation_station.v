@@ -2,7 +2,8 @@
 
 // Four issue slots shared by the integer and FP schedulers. Each source is
 // either a value or a ROB Q-tag. Selection only sees registered slots, so an
-// instruction can never dispatch on its issue edge. Removal is explicit so
+// instruction can never dispatch on its issue edge. A waiting source is also
+// ready in the cycle its tag is on the CDB (value bypassed from the CDB). Removal is explicit so
 // the integer scheduler can retain a multiply/divide slot until it finishes.
 module reservation_station #(
     parameter PAYLOAD_WIDTH = 67
@@ -80,8 +81,12 @@ module reservation_station #(
             reg [31:0] value;
             wire issue_hit = i_cdb_valid &
                              (i_issue_qtags[3*s +: 3] == i_cdb_tag);
-            assign waiting[s] = wait_tag;
-            assign values[n][32*s +: 32] = value;
+            // Same-cycle CDB bypass: a source whose producer broadcasts this
+            // cycle counts as ready and takes the value straight off the CDB,
+            // so a dependent can dispatch in its producer's broadcast cycle.
+            wire hit_now = wait_tag & i_cdb_valid & (qtag == i_cdb_tag);
+            assign waiting[s] = wait_tag & ~hit_now;
+            assign values[n][32*s +: 32] = hit_now ? i_cdb_value : value;
             always @(posedge i_clk) begin
                 if (i_rst) begin
                     wait_tag <= 1'b0;

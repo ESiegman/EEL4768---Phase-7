@@ -639,7 +639,9 @@ module lsu_harness #(
                         err("CDB request for a tag not in flight", -1, result_tag, 0);
                     else if (!p_mem[h] || p_st[h] || p_mis[h])
                         err("CDB request from a store, misaligned op or non-memory op", h, result_tag, 0);
-                    else if (!got[h])
+                    else if (!got[h] && acc_j != h)
+                        // A load may request the CDB in the cycle the cache
+                        // answers it (cache ready + grant), or later.
                         err("CDB request before the load read the cache", h, result_tag, 0);
                     else if (granted[h] != 0)
                         err("second CDB request for a load", h, result_tag, 0);
@@ -666,6 +668,12 @@ module lsu_harness #(
                 if (cand >= 0 && (result_valid !== 1'b1 || rob_prog[result_tag] != cand))
                     err("CDB request is not the oldest load with its data latched", cand,
                         result_valid === 1'b1 ? rob_prog[result_tag] : -1, cand);
+                // With no latched load waiting, a load the cache answers this
+                // cycle requests the CDB in the same cycle.
+                if (cand < 0 && acc_j >= 0 && !p_st[acc_j] && !p_mis[acc_j] &&
+                    (result_valid !== 1'b1 || rob_prog[result_tag] != acc_j))
+                    err("load answered by the cache this cycle does not request the CDB", acc_j,
+                        result_valid === 1'b1 ? rob_prog[result_tag] : -1, acc_j);
 
                 // ---- this cycle's CDB -----------------------------------
                 cand = -1;
