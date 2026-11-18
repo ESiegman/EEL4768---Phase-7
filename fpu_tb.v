@@ -1,13 +1,23 @@
 // Unit test of the whole FPU (fpu.v and the submodules it instantiates).
 //
-// The FPU is driven the way hart.v drives it: an instruction is held in EX
-// (i_valid high, i_advance low) while o_busy is high, plus a random 0-5
-// extra cycles that stand in for a cache freeze, then advances for one
-// edge. Every instruction is checked for:
+// Phase 7: fpu.v holds no architectural state. fcsr lives in fcsr.v and is
+// updated only when an instruction commits from the ROB; the FPU reads it
+// (i_fcsr) and reports the instruction's own exception flags (o_flags).
+// Here an fcsr instance stands in for the ROB commit: an instruction
+// "commits" on its advance edge (i_valid & i_advance), with o_flags and the
+// trap. So the CSR and accrue checks below test fpu.v and fcsr.v together.
+//
+// The FPU is driven the way an execution unit holds it: an instruction is
+// held (i_valid high, i_advance low) while o_busy is high, plus a random 0-5
+// extra cycles, then advances for one edge. Every instruction is checked
+// for:
 //  * the protocol (phase_6.pdf 5.3.3, 5.5.2-5.5.3): o_busy doesn't depend on
-//    i_advance; the results and o_fflags stay stable while held; o_busy
-//    doesn't rise again (no restart); fcsr doesn't change until the advance
-//    edge, and then changes exactly to what o_fflags showed
+//    i_advance; the results, o_fflags and o_flags stay stable while held;
+//    o_busy doesn't rise again (no restart); fcsr doesn't change until the
+//    commit edge, and then changes exactly to what o_fflags showed
+//  * o_flags: only this instruction's own flags (a subset of o_fflags, and
+//    exactly the vector's flags), zero for a trap, a CSR instruction, and
+//    while i_valid is low
 //  * its value: result and flags against golden vectors
 //
 // Golden vectors are in tools/fpu_vectors/ (Berkeley TestFloat with the
@@ -274,6 +284,7 @@ module fpu_tb;
     // What the last run_inst saw.
     reg [31:0] r_fp, r_int;
     reg [ 4:0] r_ff;
+    reg [ 4:0] r_flags;     // o_flags: this instruction's own flags
     reg        r_trap;
     reg [ 7:0] r_pre, r_post;   // fcsr before the instruction, and after its edge
     integer    r_busy;          // cycles o_busy was high
@@ -335,8 +346,13 @@ module fpu_tb;
             r_int  = int_result;
             r_ff   = fflags;
             r_trap = rm_trap;
+            r_flags = instruction_flags;
             if (r_trap === 1'b1 && fflags !== r_pre[4:0])
                 proto_fail("o_fflags is not the current fflags on an rm trap");
+            if (r_trap === 1'b1 && instruction_flags !== 5'd0)
+                proto_fail("o_flags not zero on an rm trap");
+            if ((instruction_flags & ~fflags) !== 5'd0)
+                proto_fail("o_flags has a bit o_fflags does not");
             for (k = 0; k < extra; k = k + 1) begin
                 @(posedge clk);
                 #1;
@@ -346,8 +362,9 @@ module fpu_tb;
                 #6;
                 if (busy !== 1'b0)
                     proto_fail("o_busy rose again while held (restart)");
-                if (fp_result !== r_fp || int_result !== r_int || fflags !== r_ff || rm_trap !== r_trap)
-                    proto_fail("result or o_fflags changed while held");
+                if (fp_result !== r_fp || int_result !== r_int || fflags !== r_ff || rm_trap !== r_trap ||
+                    instruction_flags !== r_flags)
+                    proto_fail("result, o_fflags or o_flags changed while held");
             end
             advance = 1'b1;
             #2;
@@ -381,13 +398,14 @@ module fpu_tb;
                 frs1    = $random(seed);
                 frs2    = $random(seed);
                 #6;
-                ok = (busy === 1'b0) && (rm_trap === 1'b0) && (fflags === m_ff);
+                ok = (busy === 1'b0) && (rm_trap === 1'b0) && (fflags === m_ff) &&
+                     (instruction_flags === 5'd0);
                 @(posedge clk);
                 #1;
                 ok = ok && (dut_fcsr === {m_frm, m_ff});
                 if (!ok && op_fail[OP_TRAP] < MAX_MSGS)
-                    $display("[FAIL] %0s: i_valid low: busy %b rm_trap %b o_fflags %b fcsr %h, expected 0 0 %b %h",
-                             op_name[OP_TRAP], busy, rm_trap, fflags, dut_fcsr, m_ff, {m_frm, m_ff});
+                    $display("[FAIL] %0s: i_valid low: busy %b rm_trap %b o_fflags %b o_flags %b fcsr %h, expected 0 0 %b 0 %h",
+                             op_name[OP_TRAP], busy, rm_trap, fflags, instruction_flags, dut_fcsr, m_ff, {m_frm, m_ff});
                 record(OP_TRAP, ok);
                 @(negedge clk);
             end
@@ -419,7 +437,7 @@ module fpu_tb;
             run_inst({10'd0, addr, rs1f, f3, 5'd5, 7'b1110011}, $random(seed), $random(seed),
                      $random(seed), x, hold);
             ok = (r_int === {24'd0, c_old}) && (r_ff === ff_exp) && (r_trap === 1'b0) &&
-                 (r_busy == 0) && (r_post === {frm_exp, ff_exp});
+                 (r_busy == 0) && (r_post === {frm_exp, ff_exp}) && (r_flags === 5'd0);
             if (!ok && op_fail[OP_CSR] < MAX_MSGS)
                 $display("[FAIL] %0s: f3 %b csr %0d rs1/uimm %0d x %h from fcsr %h: rd %h o_fflags %b fcsr after %h, expected %h %b %h",
                          op_name[OP_CSR], f3, addr, rs1f, x, {m_frm, m_ff}, r_int, r_ff, r_post,
@@ -495,7 +513,8 @@ module fpu_tb;
                         $display("[FAIL] %0s.hex: not an F instruction: %h", name, v_inst);
                         record(OP_PROTO, 1'b0);
                     end else begin
-                        record_value(op, (got === v_res) && (r_ff === v_ctrl[4:0]) && (r_trap === 1'b0),
+                        record_value(op, (got === v_res) && (r_ff === v_ctrl[4:0]) && (r_flags === v_ctrl[4:0]) &&
+                                         (r_trap === 1'b0),
                                      v_inst, v_a, v_b, v_c, v_x, got, r_ff, v_res, v_ctrl[4:0], v_ctrl[7:5]);
                         if (is_directed)
                             op_dir[op] = op_dir[op] + 1;
