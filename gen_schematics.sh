@@ -39,7 +39,7 @@ module_sources() {
         fpu)     echo "fpu.v fpu_fma.v fpu_cvt.v fpu_round.v fpu_divsqrt.v" ;;
         rs)      echo "rs.v reservation_station.v alu.v decoder.v imm.v" ;;
         fp_rs)   echo "fp_rs.v fp_exec.v reservation_station.v fpu.v fpu_fma.v fpu_cvt.v fpu_round.v fpu_divsqrt.v" ;;
-        hart)    echo "hart.v alu.v rf.v decoder.v imm.v rat.v cdb_arb.v rs.v reservation_station.v fp_rs.v fp_exec.v fcsr.v cache/cache.v cache/plru.v fpu.v fpu_fma.v fpu_cvt.v fpu_round.v fpu_divsqrt.v" ;;
+        hart)    echo "hart.v alu.v rf.v decoder.v imm.v rat.v cdb_arb.v lsu.v rs.v reservation_station.v fp_rs.v fp_exec.v fcsr.v cache/cache.v cache/plru.v fpu.v fpu_fma.v fpu_cvt.v fpu_round.v fpu_divsqrt.v" ;;
         *)       echo "$1.v" ;;
     esac
 }
