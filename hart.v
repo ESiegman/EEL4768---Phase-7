@@ -507,8 +507,8 @@ module hart #(
   wire        alu_busy;
 
   // The instruction in EX moves to MEM at the next edge. The alu and fpu
-  // hold a finished multi-cycle result until then, and the fpu commits fcsr
-  // only then (phase_6.pdf 5.3.3, 5.5.3).
+  // hold a finished multi-cycle result until then. Architectural FP state is
+  // now updated at WB by the shared fcsr module, not by the FPU.
   wire        ex_advance = ~pipe_stall;
 
   alu alu_inst (
@@ -532,6 +532,9 @@ module hart #(
   wire [31:0] fpu_fp_result;
   wire [31:0] fpu_int_result;
   wire [ 4:0] fpu_fflags;
+  wire [ 4:0] fpu_flags;
+  wire [ 7:0] architectural_fcsr;
+  wire [ 7:0] commit_fcsr;
   wire        fpu_busy;
   wire        fpu_rm_trap;
 
@@ -544,6 +547,7 @@ module hart #(
       .i_inst      (ex_inst),
       .i_valid     (fpu_valid),
       .i_advance   (ex_advance),
+      .i_fcsr      (architectural_fcsr),
       .i_frs1      (ex_frs1_data),
       .i_frs2      (ex_frs2_data),
       .i_frs3      (ex_frs3_data),
@@ -551,6 +555,7 @@ module hart #(
       .o_fp_result (fpu_fp_result),
       .o_int_result(fpu_int_result),
       .o_fflags    (fpu_fflags),
+      .o_flags     (fpu_flags),
       .o_busy      (fpu_busy),
       .o_rm_trap   (fpu_rm_trap)
   );
@@ -682,7 +687,7 @@ module hart #(
       mem_frs1_data <= ex_frs1_data;
       mem_frs2_data <= ex_frs2_data;
       mem_frs3_data <= ex_frs3_data;
-      mem_fflags   <= fpu_fflags;
+      mem_fflags   <= fpu_flags;
     end
   end
 
@@ -824,6 +829,16 @@ module hart #(
   end
   wire        wb_retire = wb_valid & ~wb_done;
 
+  // Compatibility for the phase-6 shell while the new ROB is integrated.
+  // Eren's backend connects these same commit inputs to its ROB head.
+  fcsr architectural_fp_state (
+      .i_clk(i_clk), .i_rst(i_rst),
+      .i_commit_valid(wb_retire), .i_commit_trap(wb_trap),
+      .i_commit_inst(wb_inst), .i_commit_xrs1(wb_rs1_data),
+      .i_commit_flags(wb_fflags),
+      .o_fcsr(architectural_fcsr), .o_next_fcsr(commit_fcsr)
+  );
+
   assign rf_rd_waddr = wb_retire ? wb_rd : 5'd0;
   assign rf_rd_wdata = wb_rd_wdata;
   assign rf_frd_wen = wb_retire & wb_frd_en;
@@ -859,7 +874,14 @@ module hart #(
                  (id_frs3_en && wb_frd == dec_rs3));
   wire fp_stall = fhz_ex || fhz_mem || (!BYPASS_EN && fhz_wb);
 
-  assign stall = id_valid && (raw_stall || fp_stall);
+  // Drain older instructions before a CSR enters EX, and hold every younger
+  // instruction until that CSR has committed. This also orders dynamic rm.
+  wire id_csr = dec_fpu & (id_inst[6:0] == 7'h73);
+  wire older_csr = (ex_valid & ex_fpu & (ex_inst[6:0] == 7'h73)) |
+                   (mem_valid & (mem_inst[6:0] == 7'h73)) |
+                   (wb_retire & (wb_inst[6:0] == 7'h73));
+  wire csr_stall = older_csr | (id_csr & (ex_valid | mem_valid | wb_retire));
+  assign stall = id_valid && (raw_stall || fp_stall || csr_stall);
 
   // Once an ebreak leaves ID, nothing behind it is fetched.
   always @(posedge i_clk) begin
@@ -898,7 +920,7 @@ module hart #(
   assign o_retire_frd_wen    = wb_frd_en;
   assign o_retire_frd_waddr  = wb_frd_en ? wb_frd : 5'd0;
   assign o_retire_frd_wdata  = wb_frd_wdata;
-  assign o_retire_fflags     = wb_fflags;
+  assign o_retire_fflags     = commit_fcsr[4:0];
 
 endmodule
 

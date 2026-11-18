@@ -37,14 +37,16 @@ module_sources() {
         decoder) echo "decoder.v imm.v" ;;
         cache)   echo "cache/cache.v cache/plru.v" ;;
         fpu)     echo "fpu.v fpu_fma.v fpu_cvt.v fpu_round.v fpu_divsqrt.v" ;;
-        hart)    echo "hart.v alu.v rf.v decoder.v imm.v rat.v cdb_arb.v cache/cache.v cache/plru.v fpu.v fpu_fma.v fpu_cvt.v fpu_round.v fpu_divsqrt.v" ;;
+        rs)      echo "rs.v reservation_station.v alu.v decoder.v imm.v" ;;
+        fp_rs)   echo "fp_rs.v fp_exec.v reservation_station.v fpu.v fpu_fma.v fpu_cvt.v fpu_round.v fpu_divsqrt.v" ;;
+        hart)    echo "hart.v alu.v rf.v decoder.v imm.v rat.v cdb_arb.v rs.v reservation_station.v fp_rs.v fp_exec.v fcsr.v cache/cache.v cache/plru.v fpu.v fpu_fma.v fpu_cvt.v fpu_round.v fpu_divsqrt.v" ;;
         *)       echo "$1.v" ;;
     esac
 }
 
 overall_status=0
 
-for name in alu imm rf decoder cache fpu rat cdb_arb hart; do
+for name in alu imm rf decoder cache fpu rs fp_rs fcsr rat cdb_arb hart; do
     sources=""
     missing=0
     for f in $(module_sources "${name}"); do

@@ -47,6 +47,17 @@ module fpu_tb;
     wire [31:0] fp_result, int_result;
     wire [ 4:0] fflags;
     wire        busy, rm_trap;
+    wire [7:0] dut_fcsr;
+    wire [4:0] instruction_flags;
+
+    // The test harness commits one instruction at a time. fpu itself owns
+    // no architectural state; the dual-lane test exercises delayed commit.
+    fcsr architectural_state (
+        .i_clk(clk), .i_rst(rst),
+        .i_commit_valid(valid & advance), .i_commit_trap(rm_trap),
+        .i_commit_inst(inst), .i_commit_xrs1(xrs1),
+        .i_commit_flags(instruction_flags), .o_fcsr(dut_fcsr), .o_next_fcsr()
+    );
 
     fpu dut (
         .i_clk       (clk),
@@ -54,6 +65,7 @@ module fpu_tb;
         .i_inst      (inst),
         .i_valid     (valid),
         .i_advance   (advance),
+        .i_fcsr      (dut_fcsr),
         .i_frs1      (frs1),
         .i_frs2      (frs2),
         .i_frs3      (frs3),
@@ -61,6 +73,7 @@ module fpu_tb;
         .o_fp_result (fp_result),
         .o_int_result(int_result),
         .o_fflags    (fflags),
+        .o_flags     (instruction_flags),
         .o_busy      (busy),
         .o_rm_trap   (rm_trap)
     );
@@ -70,9 +83,7 @@ module fpu_tb;
     initial clk = 1'b0;
     always #10 clk = ~clk;
 
-    // fcsr inside the DUT, read directly so the testbench can see exactly
-    // when it changes.
-    wire [7:0] dut_fcsr = {dut.frm, dut.fflags};
+    // Observe the shared CSR so the protocol checks see commit timing.
 
 `ifdef FPU_STANDINS
     // ------------------------------------------------------------------

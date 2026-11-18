@@ -6,23 +6,17 @@
 // multiply/divide unit, and decodes the details of its own instructions from
 // the instruction word.
 //
-// It owns all F-extension state: fcsr, holding the dynamic rounding mode frm
-// (fcsr[7:5]) and the accrued exception flags fflags (fcsr[4:0] = NV DZ OF
-// UF NX). Floating-point exceptions never trap; they only set flags, which
-// stay set until software clears them through a CSR instruction.
+// Phase 7: architectural fcsr lives in the shared commit-controlled fcsr.v.
+// Both execution units receive its value and return only their own exception
+// flags to the ROB. i_advance releases datapath state; it never commits flags
+// or CSR writes. CSR instructions must be serialized by the issue logic.
 //
-// fcsr only changes on a rising edge where the instruction in execute
-// actually moves on to the memory stage (`i_advance`). An instruction can sit
-// in execute for several cycles (for example while a cache miss freezes the
-// pipeline); committing its flags or CSR write on every one of those cycles
-// would make a CSR instruction read back its own write.
-//
-// Organization (docs/fpu_interfaces.md has the submodule contracts):
+// Organization:
 //  * decode, and the effective rounding mode / dynamic-rm trap
 //  * unpack and classify fs1, fs2, fs3 (phase_6.pdf 5.3.1)
 //  * the instructions that don't round, computed here: sign injection,
 //    fmin/fmax, feq/flt/fle, fclass, fmv.x.w, fmv.w.x
-//  * fcsr and the six CSR instructions
+//  * reads/results for the six CSR instructions (writes occur at commit)
 //  * special operands of the rounding instructions (NaN, infinity, and the
 //    zero cases of divide and square root), resolved here so the datapaths
 //    only ever see finite operands
@@ -32,8 +26,7 @@
 module fpu (
     // Global clock.
     input  wire        i_clk,
-    // Synchronous active-high reset. Clears fcsr (frm = round to nearest,
-    // ties to even; no flags set).
+    // Synchronous active-high reset for the iterative datapaths.
     input  wire        i_rst,
     // The instruction word in the execute stage.
     input  wire [31:0] i_inst,
@@ -41,9 +34,10 @@ module fpu (
     // instruction (decoder `o_fpu`): every OP-FP and fused multiply-add
     // instruction and the CSR instructions on fflags/frm/fcsr.
     input  wire        i_valid,
-    // Asserted when the instruction in execute advances to the memory stage
-    // on the next rising edge. Side effects (fcsr updates) happen only then.
+    // Release the finished datapath result on the next rising edge.
     input  wire        i_advance,
+    // Shared architectural CSR snapshot, stable for the running instruction.
+    input  wire [ 7:0] i_fcsr,
     // Floating-point source operands (rs1, rs2, rs3), raw IEEE bit patterns.
     input  wire [31:0] i_frs1,
     input  wire [31:0] i_frs2,
@@ -56,9 +50,12 @@ module fpu (
     // Result for instructions that write an integer register: fmv.x.w,
     // fclass.s, feq/flt/fle.s, fcvt.w[u].s, and the old CSR value.
     output wire [31:0] o_int_result,
-    // The accrued exception flags as they will be after this instruction
-    // (reported in the retire trace).
+    // Predicted accrued flags relative to i_fcsr. This is for standalone
+    // diagnostics; ROB retire flags must come from fcsr.o_next_fcsr.
     output wire [ 4:0] o_fflags,
+    // This instruction's flags, without any accrued flags from other ops.
+    // Store these in the ROB on CDB completion and accrue only at commit.
+    output wire [ 4:0] o_flags,
     // Asserted while a multi-cycle operation (fdiv.s/fsqrt.s) is in
     // progress and the instruction must stay in execute.
     output wire        o_busy,
@@ -111,8 +108,8 @@ module fpu (
     // ------------------------------------------------------------------
     // fcsr
     // ------------------------------------------------------------------
-    reg  [4:0] fflags;
-    reg  [2:0] frm;
+    wire [4:0] fflags = i_fcsr[4:0];
+    wire [2:0] frm = i_fcsr[7:5];
 
     // Effective rounding mode, and the dynamic-rm trap (phase_6.pdf 4.5.1).
     wire       dyn_rm = (f3 == 3'b111);
@@ -239,8 +236,6 @@ module fpu (
     wire       csr_wr   = (f3[1:0] == 2'b01) | (rs1f != 5'd0);
     // Each field keeps only its own width: writing frm takes the low 3 bits.
     wire       csr_wr_ff  = is_csr & csr_wr & (csr_addr != 2'b10);
-    wire       csr_wr_frm = is_csr & csr_wr & csr_addr[1];
-    wire [2:0] csr_frm    = (csr_addr == 2'b10) ? csr_new[2:0] : csr_new[7:5];
 
     // ------------------------------------------------------------------
     // Special operands of the rounding instructions, resolved here
@@ -446,22 +441,10 @@ module fpu (
 
     // fcsr after this instruction. Flags accrue; only a CSR write clears.
     wire [4:0] ff_after  = is_csr ? (csr_wr_ff ? csr_new[4:0] : fflags) : (fflags | op_flags);
-    wire [2:0] frm_after = csr_wr_frm ? csr_frm : frm;
 
     // The current flags while nothing runs or the instruction traps.
     assign o_fflags = (i_valid & ~o_rm_trap) ? ff_after : fflags;
-
-    // fcsr changes once per instruction, on the edge where it leaves EX
-    // (phase_6.pdf 5.3.3). A trapped instruction changes nothing.
-    always @(posedge i_clk) begin
-        if (i_rst) begin
-            fflags <= 5'd0;
-            frm    <= 3'd0;
-        end else if (i_valid & i_advance & ~o_rm_trap) begin
-            fflags <= ff_after;
-            frm    <= frm_after;
-        end
-    end
+    assign o_flags = (i_valid & ~o_rm_trap) ? op_flags : 5'd0;
 
 endmodule
 

@@ -172,7 +172,7 @@ jobs:
 
           schem_dir = Path("build/schematics")
           svgs = sorted(p.stem for p in schem_dir.glob("*.svg")) if schem_dir.exists() else []
-          modules = ["alu", "imm", "rf", "decoder", "cache", "fpu", "rat", "cdb_arb", "hart"]
+          modules = ["alu", "imm", "rf", "decoder", "cache", "fpu", "rs", "fp_rs", "fcsr", "rat", "cdb_arb", "hart"]
           lines.append("### Gate-level schematics (yosys + netlistsvg)")
           lines.append("")
           lines.append("The standalone cache uses the graded configuration: PLRU, 4 ways, 2 KB, 16-byte lines, prefetch enabled.")

@@ -123,23 +123,23 @@ module decoder (
   wire [1:0] fmt    = i_inst[26:25];
   wire [11:0] csr   = i_inst[31:20];
 
-  localparam reg [6:0] OpcLui     = 7'b0110111;
-  localparam reg [6:0] OpcAuipc   = 7'b0010111;
-  localparam reg [6:0] OpcJal     = 7'b1101111;
-  localparam reg [6:0] OpcJalr    = 7'b1100111;
-  localparam reg [6:0] OpcBranch  = 7'b1100011;
-  localparam reg [6:0] OpcLoad    = 7'b0000011;
-  localparam reg [6:0] OpcStore   = 7'b0100011;
-  localparam reg [6:0] OpcOpImm   = 7'b0010011;
-  localparam reg [6:0] OpcOp      = 7'b0110011;
-  localparam reg [6:0] OpcLoadFp  = 7'b0000111;
-  localparam reg [6:0] OpcStoreFp = 7'b0100111;
-  localparam reg [6:0] OpcOpFp    = 7'b1010011;
-  localparam reg [6:0] OpcMadd    = 7'b1000011;
-  localparam reg [6:0] OpcMsub    = 7'b1000111;
-  localparam reg [6:0] OpcNmsub   = 7'b1001011;
-  localparam reg [6:0] OpcNmadd   = 7'b1001111;
-  localparam reg [6:0] OpcSystem  = 7'b1110011;
+  localparam [6:0] OpcLui     = 7'b0110111;
+  localparam [6:0] OpcAuipc   = 7'b0010111;
+  localparam [6:0] OpcJal     = 7'b1101111;
+  localparam [6:0] OpcJalr    = 7'b1100111;
+  localparam [6:0] OpcBranch  = 7'b1100011;
+  localparam [6:0] OpcLoad    = 7'b0000011;
+  localparam [6:0] OpcStore   = 7'b0100011;
+  localparam [6:0] OpcOpImm   = 7'b0010011;
+  localparam [6:0] OpcOp      = 7'b0110011;
+  localparam [6:0] OpcLoadFp  = 7'b0000111;
+  localparam [6:0] OpcStoreFp = 7'b0100111;
+  localparam [6:0] OpcOpFp    = 7'b1010011;
+  localparam [6:0] OpcMadd    = 7'b1000011;
+  localparam [6:0] OpcMsub    = 7'b1000111;
+  localparam [6:0] OpcNmsub   = 7'b1001011;
+  localparam [6:0] OpcNmadd   = 7'b1001111;
+  localparam [6:0] OpcSystem  = 7'b1110011;
 
   // ---------------- RV32I (phase 4) ----------------
   wire is_lui    = (opcode == OpcLui);

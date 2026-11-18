@@ -11,7 +11,8 @@ help:
 	@echo
 	@echo "Details:      ./run_test.sh <name> [submission_dir]"
 	@echo "Write your own <check>_tb.v for alu, imm, rf_bypass, rf_no_bypass,"
-	@echo "decoder, cache, plru, fpu, fpu_round, rat, cdb_arb, hart_no_hazard,"
+	@echo "decoder, cache, plru, fpu, fpu_round, rs, fp_rs, fcsr, rat, cdb_arb,"
+	@echo "hart_fp_commit, hart_no_hazard,"
 	@echo "hart_hazard, hart_ooo_witness and hart_cpi -- see README.md and"
 	@echo "example/opmux_tb.v."
 	@echo "Run pip install ./lint once so make test also runs the ece552 rule"
