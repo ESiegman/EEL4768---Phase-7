@@ -11,7 +11,12 @@ module hart #(
     parameter NUM_WAYS     = 1,
     parameter CACHE_SIZE   = 16,
     parameter BLOCK_SIZE   = 128,
-    parameter PREFETCH_EN  = 0
+    parameter PREFETCH_EN  = 0,
+    // Kept for the skeleton's parameter list so a testbench that sets it
+    // still elaborates. 0 is the phase 5 write policy the cache already
+    // implements (write-back on a hit, write-through with no allocate on a
+    // miss), so nothing reads it.
+    parameter WRITE_ALLOCATE = 0
 ) (
     // Global clock.
     input  wire        i_clk,

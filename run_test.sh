@@ -32,7 +32,8 @@ fi
 # per BYPASS_EN setting, against the same rf.v (rf_bypass_tb.v and
 # rf_no_bypass_tb.v, carried over from phase 4). cache and plru carry over
 # from phase 5 (now under cache/), fpu and fpu_round from phase 6. rat and
-# cdb_arb are the two backend modules phase 7 requires as separate files.
+# cdb_arb are the two backend modules phase 7 requires as separate files;
+# lsu is the in-order load/store unit hart instantiates.
 # hart is checked four times against the same hart.v, one per rubric row in
 # phase_7.pdf 2:
 #   hart_no_hazard    basic correctness: traces/no_hazard_program.hex against
@@ -45,7 +46,7 @@ fi
 # The two .trace files are the phase 4 course traces: cycle by cycle for an
 # in-order pipeline, so only their retire lines (not BUBBLE lines or cycle
 # numbers) apply to an out-of-order hart. traces/random_*.hex are phase 6's.
-MODULES=(alu imm rf_bypass rf_no_bypass decoder cache plru fpu fpu_round rs fp_rs fcsr rat cdb_arb hart_fp_commit hart_no_hazard hart_hazard hart_ooo_witness hart_cpi)
+MODULES=(alu imm rf_bypass rf_no_bypass decoder cache plru fpu fpu_round rs fp_rs fcsr rat cdb_arb lsu hart_fp_commit hart_no_hazard hart_hazard hart_ooo_witness hart_cpi)
 
 # Most checks share a name with the .v file they test; rf's two checks both
 # target rf.v and hart's four target hart.v. The phase 5 cache lives under

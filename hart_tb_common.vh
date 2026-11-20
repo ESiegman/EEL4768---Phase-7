@@ -188,7 +188,9 @@ module hart_harness #(
         .NUM_WAYS    (NUM_WAYS),
         .CACHE_SIZE  (CACHE_SIZE),
         .BLOCK_SIZE  (BLOCK_SIZE),
-        .PREFETCH_EN (PREFETCH_EN)
+        .PREFETCH_EN (PREFETCH_EN),
+        // The skeleton declares it, so a staff testbench may set it.
+        .WRITE_ALLOCATE(0)
     ) dut (
         .i_clk              (clk),
         .i_rst              (rst),

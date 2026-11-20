@@ -1,37 +1,30 @@
 `timescale 1ns/1ps
-// Regression for moving fcsr out of the phase-6 FPU. The full phase-7 hart
-// integration tests remain in Shade's work; this checks the existing shell.
+// Regression for moving fcsr out of the phase-6 FPU: fflags and frm are
+// architectural state, written in program order at commit, so CSR reads and
+// dynamic rounding see only older committed FP instructions. The program has
+// no loads or stores, so main memory is tied off.
 module hart_fp_commit_tb;
     reg clk=0;
     always #5 clk=~clk;
-    reg rst=1, imem_valid=0;
-    reg [127:0] imem_data=0;
-    wire imem_rd;
+    reg [31:0] program_words [0:31];
+    reg rst=1;
+    // Combinational instruction port, as on the phase 7 hart.
     wire [31:0] imem_addr;
+    wire [31:0] imem_data = program_words[(imem_addr-32'h00400000)>>2];
     wire valid, trap, halt, fwen;
     wire [31:0] inst, xdata, fdata;
     wire [4:0] xrd, frd, flags;
-    reg [31:0] program_words [0:31];
-    integer n, count=0, passed=0, failed=0, line;
+    integer n, count=0, passed=0, failed=0;
     reg [4:0] expected_flags;
     hart #(.BLOCK_SIZE(16),.CACHE_SIZE(1),.NUM_WAYS(1)) dut (
         .i_clk(clk),.i_rst(rst),
-        .o_imem_rd(imem_rd),.o_imem_rd_addr(imem_addr),
-        .i_imem_valid(imem_valid),.i_imem_rd_data(imem_data),
-        .i_dmem_valid(1'b0),.i_dmem_rd_data(128'd0),
+        .o_imem_raddr(imem_addr),.i_imem_rdata(imem_data),
+        .i_mem_ready(1'b1),.i_mem_valid(1'b0),.i_mem_rd_data(128'd0),
         .o_retire_valid(valid),.o_retire_inst(inst),.o_retire_trap(trap),
         .o_retire_halt(halt),.o_retire_rd_waddr(xrd),.o_retire_rd_wdata(xdata),
         .o_retire_frd_wen(fwen),.o_retire_frd_waddr(frd),
         .o_retire_frd_wdata(fdata),.o_retire_fflags(flags)
     );
-    always @(posedge clk) begin
-        imem_valid <= !rst && imem_rd;
-        if(imem_rd) begin
-            line=(imem_addr-32'h00400000)>>2;
-            imem_data <= {program_words[line+3],program_words[line+2],
-                          program_words[line+1],program_words[line]};
-        end
-    end
     task check;
         input ok;
         input [8*80-1:0] why;
