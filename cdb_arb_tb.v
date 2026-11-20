@@ -1,21 +1,7 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
-// cdb_arb_tb: self-checking testbench for cdb_arb.v.
-//
-// What it does: drives CDB requests into the arbiter, checks the grants and
-// bus outputs against a reference model, and prints "N passed, M failed" plus
-// ALL TESTS PASSED / TEST FAILED. Run: ./run_test.sh local (or make test).
-//
-// The reference model picks the winner the way the spec words it: among the
-// valid requesters, the one whose ROB tag is closest to the head (age =
-// (tag - head) mod 8) wins; an exact tie (impossible in the real machine)
-// goes to the first in the order int, fp0, fp1, ld. The model then builds
-// the expected bus fields from the winner.
-//
-// Directed cases are worked out by hand, then every combination of
-// {4 valid bits} x {4 tags} x {head} (16 * 8^4 * 8 = 524288 vectors) is
-// checked against the model with random values and flags.
+//Testbench for cdb_arb.v
 module cdb_arb_tb;
 
     reg [2:0] head;
